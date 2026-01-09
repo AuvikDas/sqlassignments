@@ -1,0 +1,90 @@
+CREATE DATABASE IF NOT EXISTS ecommerce_store;
+USE ecommerce_store;
+
+CREATE TABLE Customers (
+    customer_id INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    email VARCHAR(100) UNIQUE NOT NULL,
+    phone VARCHAR(15),
+    address TEXT
+);
+
+CREATE TABLE Products (
+    product_id INT AUTO_INCREMENT PRIMARY KEY,
+    product_name VARCHAR(100) NOT NULL,
+    description TEXT,
+    price DECIMAL(10,2) NOT NULL,
+    stock_quantity INT NOT NULL,
+    category VARCHAR(50)
+);
+
+CREATE TABLE Orders (
+    order_id INT AUTO_INCREMENT PRIMARY KEY,
+    customer_id INT NOT NULL,
+    order_date DATE NOT NULL,
+    total_amount DECIMAL(10,2) NOT NULL,
+    status ENUM('Pending', 'Shipped', 'Delivered', 'Cancelled') DEFAULT 'Pending',
+    FOREIGN KEY (customer_id) REFERENCES Customers(customer_id) ON DELETE CASCADE
+);
+
+CREATE TABLE OrderDetails (
+    order_detail_id INT AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    product_id INT NOT NULL,
+    quantity INT NOT NULL,
+    unit_price DECIMAL(10,2) NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES Orders(order_id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES Products(product_id) ON DELETE CASCADE
+);
+
+INSERT INTO Customers (first_name, last_name, email, phone, address) VALUES
+('John', 'Doe', 'john.doe@example.com', '123-456-7890', '123 Main St, City, State'),
+('Jane', 'Smith', 'jane.smith@example.com', '987-654-3210', '456 Elm St, City, State'),
+('Alice', 'Johnson', 'alice.johnson@example.com', '555-123-4567', '789 Oak St, City, State'),
+('Bob', 'Brown', 'bob.brown@example.com', '444-567-8901', '101 Pine St, City, State'),
+('Charlie', 'Davis', 'charlie.davis@example.com', '333-789-0123', '202 Maple St, City, State');
+
+INSERT INTO Products (product_name, description, price, stock_quantity, category) VALUES
+('Laptop', 'High-performance laptop', 999.99, 50, 'Electronics'),
+('Mouse', 'Wireless mouse', 29.99, 200, 'Electronics'),
+('Book', 'Programming guide', 19.99, 100, 'Books'),
+('Headphones', 'Noise-cancelling headphones', 149.99, 75, 'Electronics'),
+('Chair', 'Ergonomic office chair', 199.99, 30, 'Furniture');
+
+INSERT INTO Orders (customer_id, order_date, total_amount, status) VALUES
+(1, '2023-10-01', 1029.98, 'Shipped'),
+(2, '2023-10-02', 179.98, 'Delivered'),
+(3, '2023-10-03', 169.98, 'Pending'),
+(4, '2023-10-04', 199.99, 'Cancelled'),
+(5, '2023-10-05', 349.98, 'Shipped');
+
+INSERT INTO OrderDetails (order_id, product_id, quantity, unit_price) VALUES
+(1, 1, 1, 999.99),  -- Order 1: Laptop
+(1, 2, 1, 29.99),   -- Order 1: Mouse
+(2, 3, 1, 19.99),   -- Order 2: Book
+(2, 4, 1, 149.99),  -- Order 2: Headphones
+(3, 5, 1, 199.99),  -- Order 3: Chair
+(4, 1, 1, 999.99),  -- Order 4: Laptop
+(5, 2, 5, 29.99),   -- Order 5: 5 Mice
+(5, 3, 2, 19.99);   -- Order 5: 2 Books
+SELECT c.first_name, c.last_name, p.product_name, o.order_date, od.quantity
+FROM Customers c
+JOIN Orders o ON c.customer_id = o.customer_id
+JOIN OrderDetails od ON o.order_id = od.order_id
+JOIN Products p ON od.product_id = p.product_id
+WHERE c.customer_id = 1;
+
+SELECT p.product_name, SUM(od.quantity) AS total_quantity_sold
+FROM Products p
+JOIN OrderDetails od ON p.product_id = od.product_id
+GROUP BY p.product_id, p.product_name
+ORDER BY total_quantity_sold DESC
+LIMIT 1;
+
+UPDATE Products
+SET stock_quantity = stock_quantity - 5
+WHERE product_id = 2;
+
+DELETE FROM Customers
+WHERE customer_id = 4;
