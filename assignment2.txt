@@ -1,0 +1,218 @@
+CREATE DATABASE IF NOT EXISTS ecommerce_db;
+USE ecommerce_db;
+
+CREATE TABLE Customers (
+    CustomerID INT PRIMARY KEY AUTO_INCREMENT,
+    Name VARCHAR(255) NOT NULL,
+    Email VARCHAR(255) UNIQUE NOT NULL,
+    RegistrationDate DATE NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE Products (
+    ProductID INT PRIMARY KEY AUTO_INCREMENT,
+    ProductName VARCHAR(255) NOT NULL,
+    Category VARCHAR(100) NOT NULL,
+    Price DECIMAL(10, 2) NOT NULL,
+    Stock INT NOT NULL CHECK (Stock >= 0)
+) ENGINE=InnoDB;
+
+CREATE TABLE Orders (
+    OrderID INT PRIMARY KEY AUTO_INCREMENT,
+    CustomerID INT NOT NULL,
+    OrderDate DATE NOT NULL,
+    TotalAmount DECIMAL(10, 2) NOT NULL,
+    FOREIGN KEY (CustomerID) REFERENCES Customers(CustomerID)
+) ENGINE=InnoDB;
+
+CREATE TABLE OrderDetails (
+    OrderDetailID INT PRIMARY KEY AUTO_INCREMENT,
+    OrderID INT NOT NULL,
+    ProductID INT NOT NULL,
+    Quantity INT NOT NULL CHECK (Quantity > 0),
+    Subtotal DECIMAL(10, 2) NOT NULL,
+    FOREIGN KEY (OrderID) REFERENCES Orders(OrderID),
+    FOREIGN KEY (ProductID) REFERENCES Products(ProductID)
+) ENGINE=InnoDB;
+
+INSERT INTO Customers (Name, Email, RegistrationDate) VALUES
+('Alice Johnson', 'alice@example.com', '2023-01-15'),
+('Bob Smith', 'bob@example.com', '2023-02-20'),
+('Charlie Brown', 'charlie@example.com', '2023-03-10'),
+('Diana Prince', 'diana@example.com', '2023-04-05'),
+('Eve Wilson', 'eve@example.com', '2023-05-12');
+
+INSERT INTO Products (ProductName, Category, Price, Stock) VALUES
+('Laptop', 'Electronics', 1200.00, 50),
+('Smartphone', 'Electronics', 800.00, 100),
+('Tablet', 'Electronics', 400.00, 75),
+('Headphones', 'Electronics', 150.00, 200),
+('Book A', 'Books', 20.00, 300),
+('Book B', 'Books', 25.00, 250),
+('Book C', 'Books', 15.00, 400),
+('T-Shirt', 'Clothing', 30.00, 150),
+('Jeans', 'Clothing', 60.00, 120),
+('Shoes', 'Clothing', 80.00, 90);
+
+INSERT INTO Orders (CustomerID, OrderDate, TotalAmount) VALUES
+(1, DATE_SUB(CURDATE(), INTERVAL 5 MONTH), 1200.00),
+(1, DATE_SUB(CURDATE(), INTERVAL 4 MONTH), 800.00),
+(2, DATE_SUB(CURDATE(), INTERVAL 3 MONTH), 400.00),
+(2, DATE_SUB(CURDATE(), INTERVAL 2 MONTH), 150.00),
+(3, DATE_SUB(CURDATE(), INTERVAL 1 MONTH), 45.00),
+(4, CURDATE(), 60.00);
+
+INSERT INTO OrderDetails (OrderID, ProductID, Quantity, Subtotal) VALUES
+(1, 1, 1, 1200.00),
+(2, 2, 1, 800.00),
+(3, 3, 1, 400.00),
+(4, 4, 1, 150.00),
+(5, 5, 1, 20.00),
+(5, 6, 1, 25.00),
+(6, 9, 1, 60.00),
+(7, 10, 1, 80.00);
+
+SELECT c.CustomerID, c.Name, SUM(o.TotalAmount) AS TotalSpent
+FROM Customers c
+JOIN Orders o ON c.CustomerID = o.CustomerID
+GROUP BY c.CustomerID, c.Name
+ORDER BY TotalSpent DESC
+LIMIT 3;
+SELECT 
+    YEAR(OrderDate) AS Year,
+    SUM(CASE WHEN OrderDate >= DATE_SUB(CURDATE(), INTERVAL 5 MONTH) AND OrderDate < DATE_SUB(CURDATE(), INTERVAL 4 MONTH) THEN TotalAmount ELSE 0 END) AS Month1_Revenue,  -- 5 months ago
+    SUM(CASE WHEN OrderDate >= DATE_SUB(CURDATE(), INTERVAL 4 MONTH) AND OrderDate < DATE_SUB(CURDATE(), INTERVAL 3 MONTH) THEN TotalAmount ELSE 0 END) AS Month2_Revenue,  -- 4 months ago
+    SUM(CASE WHEN OrderDate >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND OrderDate < DATE_SUB(CURDATE(), INTERVAL 2 MONTH) THEN TotalAmount ELSE 0 END) AS Month3_Revenue,  -- 3 months ago
+    SUM(CASE WHEN OrderDate >= DATE_SUB(CURDATE(), INTERVAL 2 MONTH) AND OrderDate < DATE_SUB(CURDATE(), INTERVAL 1 MONTH) THEN TotalAmount ELSE 0 END) AS Month4_Revenue,  -- 2 months ago
+    SUM(CASE WHEN OrderDate >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH) AND OrderDate < CURDATE() THEN TotalAmount ELSE 0 END) AS Month5_Revenue,  -- 1 month ago
+    SUM(CASE WHEN OrderDate >= DATE_SUB(CURDATE(), INTERVAL 0 MONTH) THEN TotalAmount ELSE 0 END) AS Month6_Revenue  -- Current month (up to now)
+FROM Orders
+WHERE OrderDate >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+GROUP BY YEAR(OrderDate)
+ORDER BY Year DESC;
+
+WITH RankedProducts AS (
+    SELECT 
+        ProductID,
+        ProductName,
+        Price,
+        ROW_NUMBER() OVER (ORDER BY Price DESC) AS rnk
+    FROM Products
+)
+SELECT ProductID, ProductName, Price
+FROM RankedProducts
+WHERE rnk = 2;
+
+DELIMITER //
+
+CREATE PROCEDURE PlaceOrder(
+    IN p_CustomerID INT,
+    IN p_ProductID INT,
+    IN p_Quantity INT,
+    OUT p_OrderID INT
+)
+BEGIN
+    DECLARE v_Price DECIMAL(10, 2);
+    DECLARE v_Stock INT;
+    DECLARE v_Subtotal DECIMAL(10, 2);
+    DECLARE v_Total DECIMAL(10, 2);
+    
+    START TRANSACTION;
+    
+    SELECT Price, Stock INTO v_Price, v_Stock FROM Products WHERE ProductID = p_ProductID;
+    IF v_Stock < p_Quantity THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Insufficient stock';
+        ROLLBACK;
+    ELSE
+        UPDATE Products SET Stock = Stock - p_Quantity WHERE ProductID = p_ProductID;
+        SET v_Subtotal = v_Price * p_Quantity;
+        SET v_Total = v_Subtotal;  
+        INSERT INTO Orders (CustomerID, OrderDate, TotalAmount) VALUES (p_CustomerID, CURDATE(), v_Total);
+        SET p_OrderID = LAST_INSERT_ID();
+   
+        INSERT INTO OrderDetails (OrderID, ProductID, Quantity, Subtotal) VALUES (p_OrderID, p_ProductID, p_Quantity, v_Subtotal);
+        
+        COMMIT;
+    END IF;
+END //
+
+DELIMITER ;
+
+DELIMITER //
+
+CREATE FUNCTION GetTotalSpent(p_CustomerID INT) RETURNS DECIMAL(10, 2)
+DETERMINISTIC
+BEGIN
+    DECLARE v_Total DECIMAL(10, 2);
+    SELECT COALESCE(SUM(TotalAmount), 0) INTO v_Total FROM Orders WHERE CustomerID = p_CustomerID;
+    RETURN v_Total;
+END //
+
+DELIMITER ;
+START TRANSACTION;
+
+SET @CustomerID = 1;
+SET @ProductID = 1;
+SET @Quantity = 2;
+
+UPDATE Products
+SET Stock = Stock - @Quantity
+WHERE ProductID = @ProductID
+  AND Stock >= @Quantity;
+
+INSERT INTO Orders (CustomerID, OrderDate, TotalAmount)
+SELECT @CustomerID, CURDATE(), Price * @Quantity
+FROM Products
+WHERE ProductID = @ProductID
+  AND ROW_COUNT() > 0;
+
+SET @OrderID = LAST_INSERT_ID();
+
+INSERT INTO OrderDetails (OrderID, ProductID, Quantity, Subtotal)
+SELECT @OrderID, @ProductID, @Quantity, Price * @Quantity
+FROM Products
+WHERE @OrderID IS NOT NULL;
+
+COMMIT;
+SET SESSION TRANSACTION ISOLATION LEVEL SERIALIZABLE;
+
+START TRANSACTION;
+
+UPDATE OrderDetails
+SET Quantity = Quantity + 1
+WHERE OrderDetailID = 1;
+
+COMMIT;
+
+START TRANSACTION;
+
+SAVEPOINT sp1;
+
+UPDATE Products
+SET Stock = Stock - 2
+WHERE ProductID = 1
+  AND Stock >= 2;
+
+
+SAVEPOINT sp2;
+
+UPDATE Products
+SET Stock = Stock - 1
+WHERE ProductID = 2
+  AND Stock >= 1;
+
+COMMIT;
+SELECT 
+    o.OrderID,
+    o.CustomerID,
+    o.OrderDate,
+    o.TotalAmount,
+    LAG(o.TotalAmount) OVER (
+        PARTITION BY o.CustomerID 
+        ORDER BY o.OrderDate
+    ) AS PreviousAmount,
+    o.TotalAmount - LAG(o.TotalAmount) OVER (
+        PARTITION BY o.CustomerID 
+        ORDER BY o.OrderDate
+    ) AS Difference
+FROM Orders o
+ORDER BY o.CustomerID, o.OrderDate;
